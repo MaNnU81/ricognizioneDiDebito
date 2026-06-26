@@ -1,0 +1,635 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ricognizione Debito</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+  :root{
+    --paper:#F5F0E6;
+    --paper-2:#EEE6D6;
+    --ink:#1B2A4A;
+    --ink-light:#3B4F73;
+    --stamp:#B23A2E;
+    --gold:#B8915A;
+    --line:#D8CFC0;
+    --green:#3C6E47;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:var(--paper);
+    background-image:
+      linear-gradient(var(--line) 1px, transparent 1px);
+    background-size: 100% 38px;
+    color:var(--ink);
+    font-family:'Inter',sans-serif;
+    min-height:100vh;
+  }
+  h1,h2,h3{font-family:'Source Serif 4',serif; margin:0; font-weight:600;}
+  .mono{font-family:'IBM Plex Mono',monospace;}
+  a{color:inherit;}
+
+  /* ---------- LOGIN ---------- */
+  #login-screen{
+    min-height:100vh; display:flex; align-items:center; justify-content:center; padding:24px;
+  }
+  .passbook{
+    background:var(--ink); color:var(--paper); width:100%; max-width:380px;
+    border-radius:4px; padding:40px 32px; box-shadow:0 20px 50px rgba(27,42,74,.35);
+    position:relative;
+  }
+  .passbook::before{
+    content:""; position:absolute; inset:10px; border:1px solid rgba(245,240,230,.25); border-radius:2px; pointer-events:none;
+  }
+  .passbook .eyebrow{
+    font-family:'IBM Plex Mono',monospace; letter-spacing:.18em; font-size:11px; text-transform:uppercase; opacity:.7; margin-bottom:6px;
+  }
+  .passbook h1{font-size:28px; margin-bottom:28px; color:var(--paper);}
+  .field{margin-bottom:16px;}
+  .field label{display:block; font-size:12px; letter-spacing:.05em; text-transform:uppercase; opacity:.75; margin-bottom:6px;}
+  .field input{
+    width:100%; padding:11px 12px; border-radius:2px; border:1px solid rgba(245,240,230,.3);
+    background:rgba(245,240,230,.08); color:var(--paper); font-size:15px; font-family:'Inter',sans-serif;
+  }
+  .field input:focus{outline:2px solid var(--gold); border-color:transparent;}
+  .btn{
+    border:none; cursor:pointer; font-family:'Inter',sans-serif; font-weight:600; font-size:14px;
+    padding:12px 20px; border-radius:2px; transition:transform .08s ease;
+  }
+  .btn:active{transform:scale(.98);}
+  .btn-primary{background:var(--stamp); color:#fff; width:100%; margin-top:8px;}
+  .btn-ghost{background:transparent; border:1px solid var(--line); color:var(--ink);}
+  #login-error{color:#E2A39B; font-size:13px; margin-top:10px; min-height:16px;}
+
+  /* ---------- APP SHELL ---------- */
+  #app{max-width:980px; margin:0 auto; padding:28px 20px 80px;}
+  header.topbar{
+    display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:28px; flex-wrap:wrap; gap:12px;
+  }
+  header.topbar .title .eyebrow{font-family:'IBM Plex Mono',monospace; font-size:11px; letter-spacing:.18em; text-transform:uppercase; color:var(--ink-light);}
+  header.topbar h1{font-size:30px;}
+  .who{font-size:13px; color:var(--ink-light); text-align:right;}
+  .who button{background:none;border:none;color:var(--stamp);font-size:13px;text-decoration:underline;cursor:pointer;padding:0;margin-top:4px;}
+
+  .grid-top{display:grid; grid-template-columns: 240px 1fr; gap:24px; margin-bottom:28px;}
+  @media (max-width:640px){.grid-top{grid-template-columns:1fr;}}
+
+  /* stamp ring - signature element */
+  .stamp-card{
+    background:var(--paper-2); border:1px solid var(--line); border-radius:4px; padding:20px;
+    display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center;
+  }
+  .stamp-wrap{position:relative; width:170px; height:170px; transform:rotate(-4deg);}
+  .stamp-wrap svg{width:100%; height:100%;}
+  .stamp-pct{
+    position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    transform:rotate(4deg);
+  }
+  .stamp-pct .num{font-family:'Source Serif 4',serif; font-size:34px; font-weight:700; color:var(--stamp); line-height:1;}
+  .stamp-pct .lbl{font-family:'IBM Plex Mono',monospace; font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:var(--ink-light); margin-top:2px;}
+  .stamp-card .caption{margin-top:14px; font-size:12px; color:var(--ink-light); font-family:'IBM Plex Mono',monospace;}
+
+  .stats{display:grid; grid-template-columns:repeat(2,1fr); gap:14px;}
+  .stat{background:var(--paper-2); border:1px solid var(--line); border-radius:4px; padding:16px 18px;}
+  .stat .lbl{font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:var(--ink-light); margin-bottom:6px;}
+  .stat .val{font-family:'Source Serif 4',serif; font-size:24px; font-weight:600;}
+  .stat .sub{font-size:12px; color:var(--ink-light); margin-top:4px;}
+
+  .panel{background:var(--paper-2); border:1px solid var(--line); border-radius:4px; padding:20px; margin-bottom:24px;}
+  .panel-head{display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; flex-wrap:wrap; gap:10px;}
+  .panel-head h2{font-size:18px;}
+
+  canvas#monthlyChart{max-height:240px;}
+
+  table{width:100%; border-collapse:collapse; font-size:14px;}
+  thead th{
+    text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--ink-light);
+    border-bottom:1px solid var(--line); padding:8px 6px;
+  }
+  tbody td{padding:9px 6px; border-bottom:1px solid var(--line); vertical-align:top;}
+  tbody tr:hover{background:rgba(184,145,90,.08);}
+  .badge{
+    display:inline-block; padding:2px 8px; border-radius:20px; font-size:11px; font-weight:600; font-family:'IBM Plex Mono',monospace;
+  }
+  .badge-pagato{background:rgba(60,110,71,.15); color:var(--green);}
+  .badge-saltato{background:rgba(178,58,46,.12); color:var(--stamp);}
+  .row-actions button{background:none;border:none;cursor:pointer;color:var(--ink-light);font-size:12px;text-decoration:underline;margin-right:8px;}
+  .note-cell{color:var(--ink-light); font-size:12px;}
+
+  .toolbar{display:flex; gap:10px; flex-wrap:wrap;}
+  .toolbar input[type="month"], .toolbar select{
+    padding:8px 10px; border:1px solid var(--line); border-radius:2px; font-family:'Inter',sans-serif; background:#fff;
+  }
+
+  /* modal */
+  .modal-backdrop{
+    position:fixed; inset:0; background:rgba(27,42,74,.55); display:none; align-items:center; justify-content:center; padding:20px; z-index:50;
+  }
+  .modal-backdrop.open{display:flex;}
+  .modal{background:var(--paper); border-radius:4px; width:100%; max-width:420px; padding:28px; box-shadow:0 20px 60px rgba(0,0,0,.3);}
+  .modal h3{margin-bottom:18px;}
+  .modal .field input, .modal .field select{
+    width:100%; padding:10px; border:1px solid var(--line); border-radius:2px; font-family:'Inter',sans-serif; font-size:14px; background:#fff; color:var(--ink);
+  }
+  .modal .field label{font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:var(--ink-light); display:block; margin-bottom:6px;}
+  .modal .field{margin-bottom:14px;}
+  .modal-actions{display:flex; justify-content:flex-end; gap:10px; margin-top:8px;}
+
+  .empty{text-align:center; padding:30px 10px; color:var(--ink-light); font-size:13px;}
+  .toast{
+    position:fixed; bottom:24px; left:50%; transform:translateX(-50%); background:var(--ink); color:var(--paper);
+    padding:10px 18px; border-radius:4px; font-size:13px; opacity:0; transition:opacity .25s ease; z-index:80;
+  }
+  .toast.show{opacity:1;}
+  [hidden]{display:none !important;}
+</style>
+</head>
+<body>
+
+<!-- ====================== LOGIN ====================== -->
+<div id="login-screen">
+  <div class="passbook">
+    <div class="eyebrow">Ricognizione di debito</div>
+    <h1>Accesso al registro</h1>
+    <form id="login-form">
+      <div class="field">
+        <label for="login-user">Utente</label>
+        <input id="login-user" type="text" autocomplete="username" required>
+      </div>
+      <div class="field">
+        <label for="login-pass">Password</label>
+        <input id="login-pass" type="password" autocomplete="current-password" required>
+      </div>
+      <button type="submit" class="btn btn-primary">Entra</button>
+      <div id="login-error"></div>
+    </form>
+  </div>
+</div>
+
+<!-- ====================== APP ====================== -->
+<div id="app" hidden>
+  <header class="topbar">
+    <div class="title">
+      <div class="eyebrow">Registro versamenti</div>
+      <h1>Ricognizione di debito</h1>
+    </div>
+    <div class="who">
+      <div id="who-user">—</div>
+      <button id="logout-btn" type="button">Cambia utente</button>
+    </div>
+  </header>
+
+  <div class="grid-top">
+    <div class="stamp-card">
+      <div class="stamp-wrap">
+        <svg viewBox="0 0 120 120">
+          <circle cx="60" cy="60" r="52" fill="none" stroke="rgba(27,42,74,.12)" stroke-width="10"/>
+          <circle id="stamp-arc" cx="60" cy="60" r="52" fill="none" stroke="var(--stamp)" stroke-width="10"
+            stroke-linecap="round" stroke-dasharray="0 1000" transform="rotate(-90 60 60)"/>
+        </svg>
+        <div class="stamp-pct">
+          <div class="num" id="pct-value">0%</div>
+          <div class="lbl">versato</div>
+        </div>
+      </div>
+      <div class="caption" id="rate-caption">— rate pagate</div>
+    </div>
+
+    <div class="stats">
+      <div class="stat">
+        <div class="lbl">Totale debito</div>
+        <div class="val mono" id="stat-totale">€ 0</div>
+      </div>
+      <div class="stat">
+        <div class="lbl">Versato</div>
+        <div class="val mono" id="stat-versato">€ 0</div>
+      </div>
+      <div class="stat">
+        <div class="lbl">Residuo</div>
+        <div class="val mono" id="stat-residuo">€ 0</div>
+      </div>
+      <div class="stat">
+        <div class="lbl">Rate rimanenti</div>
+        <div class="val mono" id="stat-rate">0</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <h2>Andamento versamenti</h2>
+    </div>
+    <canvas id="monthlyChart"></canvas>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <h2>Registro</h2>
+      <div class="toolbar">
+        <button class="btn btn-ghost" id="pdf-btn" type="button">Esporta PDF</button>
+        <button class="btn btn-primary" id="add-btn" type="button" hidden>+ Nuovo versamento</button>
+      </div>
+    </div>
+    <div id="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Data</th><th>TRN</th><th>Importo</th><th>Stato</th><th>Note</th><th></th></tr>
+        </thead>
+        <tbody id="ledger-body"></tbody>
+      </table>
+      <div class="empty" id="ledger-empty" hidden>Nessun versamento registrato.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ====================== MODAL: ADD/EDIT MOVIMENTO ====================== -->
+<div class="modal-backdrop" id="movimento-backdrop">
+  <div class="modal">
+    <h3 id="movimento-title">Nuovo versamento</h3>
+    <form id="movimento-form">
+      <input type="hidden" id="mov-rowindex">
+      <div class="field">
+        <label>Data</label>
+        <input type="date" id="mov-data" required>
+      </div>
+      <div class="field">
+        <label>TRN</label>
+        <input type="text" id="mov-trn">
+      </div>
+      <div class="field">
+        <label>Importo (€)</label>
+        <input type="number" id="mov-importo" step="0.01">
+      </div>
+      <div class="field">
+        <label>Stato</label>
+        <select id="mov-stato">
+          <option value="Pagato">Pagato</option>
+          <option value="Saltato">Saltato</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Note</label>
+        <input type="text" id="mov-note">
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" id="movimento-cancel">Annulla</button>
+        <button type="submit" class="btn btn-primary">Salva</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ====================== MODAL: EXPORT PDF ====================== -->
+<div class="modal-backdrop" id="pdf-backdrop">
+  <div class="modal">
+    <h3>Esporta report PDF</h3>
+    <div class="field">
+      <label>Periodo</label>
+      <select id="pdf-mode">
+        <option value="all">Tutto lo storico</option>
+        <option value="range">Intervallo di date</option>
+      </select>
+    </div>
+    <div id="pdf-range-fields" hidden>
+      <div class="field">
+        <label>Dal</label>
+        <input type="date" id="pdf-from">
+      </div>
+      <div class="field">
+        <label>Al</label>
+        <input type="date" id="pdf-to">
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button type="button" class="btn btn-ghost" id="pdf-cancel">Annulla</button>
+      <button type="button" class="btn btn-primary" id="pdf-generate">Genera PDF</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ======================================================================
+   CONFIGURAZIONE — incolla qui l'URL della tua Apps Script Web App
+   ====================================================================== */
+const CONFIG = {
+  API_URL: 'PASTE_YOUR_APPS_SCRIPT_WEB_APP_URL_HERE'
+};
+
+/* ======================================================================
+   STATO APPLICAZIONE
+   ====================================================================== */
+let SESSION = null;       // { username, password, ruolo }
+let MOVIMENTI = [];
+let CFG = {};
+let chartRef = null;
+
+const $ = (id) => document.getElementById(id);
+
+function toast(msg){
+  const t = $('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'), 2400);
+}
+
+function eur(n){
+  return '€ ' + (Number(n)||0).toLocaleString('it-IT');
+}
+
+/* ======================================================================
+   LOGIN / SESSIONE
+   ====================================================================== */
+function loadSession(){
+  const raw = localStorage.getItem('rd_session');
+  if(raw){
+    try{ SESSION = JSON.parse(raw); return true; }catch(e){}
+  }
+  return false;
+}
+function saveSession(){ localStorage.setItem('rd_session', JSON.stringify(SESSION)); }
+function clearSession(){ localStorage.removeItem('rd_session'); SESSION = null; }
+
+async function apiGet(params){
+  const url = CONFIG.API_URL + '?' + new URLSearchParams(params).toString();
+  const res = await fetch(url);
+  return res.json();
+}
+async function apiPost(body){
+  const res = await fetch(CONFIG.API_URL, {
+    method: 'POST',
+    body: JSON.stringify({ ...body, username: SESSION.username, password: SESSION.password })
+  });
+  return res.json();
+}
+
+async function doLogin(username, password){
+  const r = await apiGet({ action:'login', username, password });
+  if(r.ok){
+    SESSION = { username, password, ruolo: r.ruolo };
+    saveSession();
+    return true;
+  }
+  return false;
+}
+
+$('login-form').addEventListener('submit', async (e)=>{
+  e.preventDefault();
+  $('login-error').textContent = '';
+  const u = $('login-user').value.trim();
+  const p = $('login-pass').value;
+  try{
+    const ok = await doLogin(u, p);
+    if(ok){ enterApp(); } else { $('login-error').textContent = 'Credenziali non valide.'; }
+  }catch(err){
+    $('login-error').textContent = 'Errore di connessione. Controlla API_URL.';
+  }
+});
+
+$('logout-btn').addEventListener('click', ()=>{
+  clearSession();
+  $('app').hidden = true;
+  $('login-screen').hidden = false;
+});
+
+/* ======================================================================
+   AVVIO APP
+   ====================================================================== */
+async function enterApp(){
+  $('login-screen').hidden = true;
+  $('app').hidden = false;
+  $('who-user').textContent = SESSION.username + ' · ' + (SESSION.ruolo === 'write' ? 'scrittura' : 'lettura');
+  $('add-btn').hidden = SESSION.ruolo !== 'write';
+  await refreshData();
+}
+
+async function refreshData(){
+  const r = await apiGet({ action:'getData' });
+  if(!r.ok){ toast('Errore caricamento dati'); return; }
+  MOVIMENTI = r.movimenti;
+  CFG = r.config;
+  render();
+}
+
+(function init(){
+  if(loadSession()){ enterApp(); }
+})();
+
+/* ======================================================================
+   CALCOLI
+   ====================================================================== */
+function computeStats(){
+  const pagati = MOVIMENTI.filter(m => m.stato === 'Pagato' && m.importo);
+  const versato = pagati.reduce((s,m)=> s + Number(m.importo), 0);
+  const totale = Number(CFG.TotaleDebito) || 0;
+  const residuo = Math.max(totale - versato, 0);
+  const rataMensile = Number(CFG.ImportoMensile) || 208;
+  const rateRimanenti = rataMensile ? Math.ceil(residuo / rataMensile) : 0;
+  const pct = totale ? Math.min(versato / totale * 100, 100) : 0;
+  return { versato, totale, residuo, rateRimanenti, pct, numRatePagate: pagati.length };
+}
+
+/* ======================================================================
+   RENDER
+   ====================================================================== */
+function render(){
+  const s = computeStats();
+  $('stat-totale').textContent = eur(s.totale);
+  $('stat-versato').textContent = eur(s.versato);
+  $('stat-residuo').textContent = eur(s.residuo);
+  $('stat-rate').textContent = s.rateRimanenti;
+  $('pct-value').textContent = Math.round(s.pct) + '%';
+  $('rate-caption').textContent = s.numRatePagate + ' rate pagate';
+
+  const circumference = 2 * Math.PI * 52;
+  const arc = $('stamp-arc');
+  arc.setAttribute('stroke-dasharray', `${circumference * s.pct/100} ${circumference}`);
+
+  renderTable();
+  renderChart();
+}
+
+function renderTable(){
+  const body = $('ledger-body');
+  body.innerHTML = '';
+  const sorted = [...MOVIMENTI].sort((a,b)=> b.data.localeCompare(a.data));
+  $('ledger-empty').hidden = sorted.length > 0;
+
+  sorted.forEach(m=>{
+    const tr = document.createElement('tr');
+    const badgeClass = m.stato === 'Pagato' ? 'badge-pagato' : 'badge-saltato';
+    tr.innerHTML = `
+      <td class="mono">${m.data}</td>
+      <td class="mono" style="font-size:12px;">${m.trn || '—'}</td>
+      <td class="mono">${m.importo ? eur(m.importo) : '—'}</td>
+      <td><span class="badge ${badgeClass}">${m.stato || '—'}</span></td>
+      <td class="note-cell">${m.note || ''}</td>
+      <td class="row-actions">${SESSION.ruolo === 'write' ? `<button data-edit="${m.rowIndex}">Modifica</button><button data-del="${m.rowIndex}">Elimina</button>` : ''}</td>
+    `;
+    body.appendChild(tr);
+  });
+
+  body.querySelectorAll('[data-edit]').forEach(btn=>{
+    btn.addEventListener('click', ()=> openMovimentoModal(Number(btn.dataset.edit)));
+  });
+  body.querySelectorAll('[data-del]').forEach(btn=>{
+    btn.addEventListener('click', ()=> deleteMovimento(Number(btn.dataset.del)));
+  });
+}
+
+function renderChart(){
+  const byMonth = {};
+  MOVIMENTI.filter(m=>m.stato==='Pagato' && m.importo).forEach(m=>{
+    const key = m.data.slice(0,7);
+    byMonth[key] = (byMonth[key]||0) + Number(m.importo);
+  });
+  const labels = Object.keys(byMonth).sort();
+  const values = labels.map(l=>byMonth[l]);
+
+  if(chartRef) chartRef.destroy();
+  chartRef = new Chart($('monthlyChart'), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{ label:'Versato', data: values, backgroundColor: '#B23A2E', borderRadius: 2, maxBarThickness: 22 }]
+    },
+    options: {
+      plugins: { legend: { display:false } },
+      scales: {
+        x: { grid: { display:false }, ticks: { font: { family: 'IBM Plex Mono', size: 10 } } },
+        y: { grid: { color:'#D8CFC0' }, ticks: { callback: v => '€'+v } }
+      }
+    }
+  });
+}
+
+/* ======================================================================
+   CRUD MOVIMENTI (solo ruolo write)
+   ====================================================================== */
+function openMovimentoModal(rowIndex){
+  $('movimento-form').reset();
+  $('mov-rowindex').value = '';
+  $('movimento-title').textContent = 'Nuovo versamento';
+  if(rowIndex){
+    const m = MOVIMENTI.find(x=>x.rowIndex===rowIndex);
+    if(m){
+      $('movimento-title').textContent = 'Modifica versamento';
+      $('mov-rowindex').value = m.rowIndex;
+      $('mov-data').value = m.data;
+      $('mov-trn').value = m.trn;
+      $('mov-importo').value = m.importo || '';
+      $('mov-stato').value = m.stato || 'Pagato';
+      $('mov-note').value = m.note || '';
+    }
+  } else {
+    $('mov-stato').value = 'Pagato';
+    $('mov-importo').value = CFG.ImportoMensile || 208;
+  }
+  $('movimento-backdrop').classList.add('open');
+}
+$('add-btn').addEventListener('click', ()=> openMovimentoModal(null));
+$('movimento-cancel').addEventListener('click', ()=> $('movimento-backdrop').classList.remove('open'));
+
+$('movimento-form').addEventListener('submit', async (e)=>{
+  e.preventDefault();
+  const rowIndex = $('mov-rowindex').value;
+  const payload = {
+    data: $('mov-data').value,
+    trn: $('mov-trn').value,
+    importo: $('mov-importo').value ? Number($('mov-importo').value) : '',
+    stato: $('mov-stato').value,
+    note: $('mov-note').value
+  };
+  const action = rowIndex ? 'updateMovimento' : 'addMovimento';
+  if(rowIndex) payload.rowIndex = Number(rowIndex);
+  const r = await apiPost({ action, ...payload });
+  if(r.ok){
+    toast('Versamento salvato');
+    $('movimento-backdrop').classList.remove('open');
+    await refreshData();
+  } else {
+    toast('Errore: ' + (r.error||'sconosciuto'));
+  }
+});
+
+async function deleteMovimento(rowIndex){
+  if(!confirm('Eliminare questo versamento?')) return;
+  const r = await apiPost({ action:'deleteMovimento', rowIndex });
+  if(r.ok){ toast('Eliminato'); await refreshData(); }
+  else toast('Errore eliminazione');
+}
+
+/* ======================================================================
+   EXPORT PDF
+   ====================================================================== */
+$('pdf-btn').addEventListener('click', ()=> $('pdf-backdrop').classList.add('open'));
+$('pdf-cancel').addEventListener('click', ()=> $('pdf-backdrop').classList.remove('open'));
+$('pdf-mode').addEventListener('change', (e)=>{
+  $('pdf-range-fields').hidden = e.target.value !== 'range';
+});
+
+$('pdf-generate').addEventListener('click', ()=>{
+  const mode = $('pdf-mode').value;
+  let filtered = [...MOVIMENTI];
+  let label = 'Storico completo';
+  if(mode === 'range'){
+    const from = $('pdf-from').value, to = $('pdf-to').value;
+    filtered = filtered.filter(m => (!from || m.data >= from) && (!to || m.data <= to));
+    label = `Periodo: ${from || '...'} → ${to || '...'}`;
+  }
+  filtered.sort((a,b)=> a.data.localeCompare(b.data));
+
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF();
+  const s = computeStats();
+  const periodVersato = filtered.filter(m=>m.stato==='Pagato' && m.importo).reduce((sum,m)=>sum+Number(m.importo),0);
+
+  doc.setFont('helvetica','bold'); doc.setFontSize(16);
+  doc.text('Ricognizione di debito — Report', 14, 18);
+  doc.setFont('helvetica','normal'); doc.setFontSize(10);
+  doc.text(label, 14, 25);
+  doc.text('Generato il ' + new Date().toLocaleDateString('it-IT'), 14, 30);
+
+  let y = 42;
+  doc.setFontSize(9);
+  doc.setFont('helvetica','bold');
+  doc.text('Data', 14, y); doc.text('TRN', 42, y); doc.text('Importo', 130, y); doc.text('Stato', 155, y); doc.text('Note', 175, y);
+  y += 4;
+  doc.setLineWidth(0.2); doc.line(14, y, 196, y); y += 5;
+  doc.setFont('helvetica','normal');
+
+  filtered.forEach(m=>{
+    if(y > 280){ doc.addPage(); y = 18; }
+    doc.text(m.data, 14, y);
+    doc.text(String(m.trn||'—').slice(0,40), 42, y);
+    doc.text(m.importo ? '€ '+m.importo : '—', 130, y);
+    doc.text(m.stato||'—', 155, y);
+    doc.text(String(m.note||'').slice(0,18), 175, y);
+    y += 6;
+  });
+
+  y += 6;
+  if(y > 270){ doc.addPage(); y = 18; }
+  doc.setLineWidth(0.3); doc.line(14, y, 196, y); y += 8;
+  doc.setFont('helvetica','bold'); doc.setFontSize(11);
+  doc.text('Riepilogo periodo', 14, y); y += 7;
+  doc.setFont('helvetica','normal'); doc.setFontSize(10);
+  doc.text(`Versato nel periodo: € ${periodVersato.toLocaleString('it-IT')}`, 14, y); y += 6;
+  doc.text(`Totale debito: € ${s.totale.toLocaleString('it-IT')}`, 14, y); y += 6;
+  doc.text(`Totale versato ad oggi: € ${s.versato.toLocaleString('it-IT')}`, 14, y); y += 6;
+  doc.text(`Residuo da pagare: € ${s.residuo.toLocaleString('it-IT')}`, 14, y); y += 6;
+  doc.text(`Rate pagate: ${s.numRatePagate}  ·  Rate rimanenti: ${s.rateRimanenti}`, 14, y); y += 6;
+  doc.text(`Percentuale versata: ${Math.round(s.pct)}%`, 14, y);
+
+  doc.save(`ricognizione-debito_${new Date().toISOString().slice(0,10)}.pdf`);
+  $('pdf-backdrop').classList.remove('open');
+});
+</script>
+</body>
+</html>
