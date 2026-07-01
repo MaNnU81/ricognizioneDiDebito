@@ -1,14 +1,14 @@
 /* ======================================================================
-   CONFIGURAZIONE — incolla qui l'URL della tua Apps Script Web App
+   CONFIGURAZIONE
    ====================================================================== */
 const CONFIG = {
-  API_URL: 'https://script.google.com/macros/s/AKfycbymMSfv3ejTrcmluk7u20at8ltGxqjTuQF4f-TYhiqMbJRzOQXClrZ_dDhUz9J5f_HL/exec' 
+  API_URL: 'https://script.google.com/macros/s/AKfycbymMSfv3ejTrcmluk7u20at8ltGxqjTuQF4f-TYhiqMbJRzOQXClrZ_dDhUz9J5f_HL/exec'
 };
 
 /* ======================================================================
    STATO APPLICAZIONE
    ====================================================================== */
-let SESSION = null;       // { username, password, ruolo }
+let SESSION = null;
 let MOVIMENTI = [];
 let CFG = {};
 let chartRef = null;
@@ -30,12 +30,20 @@ function copyFallback(text){
   ta.focus();
   ta.select();
   try{
-    document.execCommand('copy');
-    toast('TRN copiato!');
+    const ok = document.execCommand('copy');
+    toast(ok ? 'TRN copiato!' : 'Copia: ' + text);
   }catch(e){
-    toast('Copia manuale: ' + text);
+    toast('TRN: ' + text);
   }
   document.body.removeChild(ta);
+}
+
+function copyText(text){
+  if(navigator.clipboard && window.isSecureContext){
+    navigator.clipboard.writeText(text).then(()=> toast('TRN copiato!')).catch(()=> copyFallback(text));
+  } else {
+    copyFallback(text);
+  }
 }
 
 function eur(n){
@@ -45,13 +53,13 @@ function eur(n){
 const MESI_IT = ['GEN','FEB','MAR','APR','MAG','GIU','LUG','AGO','SET','OTT','NOV','DIC'];
 
 function fmtMese(dateStr){
-  const [y,m] = dateStr.split('-');
-  return MESI_IT[parseInt(m,10)-1] + ' ' + y;
+  const parts = dateStr.split('-');
+  return MESI_IT[parseInt(parts[1],10)-1] + ' ' + parts[0];
 }
 
 function addMonths(dateStr, n){
-  const [y,m] = dateStr.split('-').map(Number);
-  const d = new Date(y, m - 1 + n, 1);
+  const parts = dateStr.split('-').map(Number);
+  const d = new Date(parts[0], parts[1] - 1 + n, 1);
   return MESI_IT[d.getMonth()] + ' ' + d.getFullYear();
 }
 
@@ -60,9 +68,7 @@ function addMonths(dateStr, n){
    ====================================================================== */
 function loadSession(){
   const raw = localStorage.getItem('rd_session');
-  if(raw){
-    try{ SESSION = JSON.parse(raw); return true; }catch(e){}
-  }
+  if(raw){ try{ SESSION = JSON.parse(raw); return true; }catch(e){} }
   return false;
 }
 function saveSession(){ localStorage.setItem('rd_session', JSON.stringify(SESSION)); }
@@ -100,7 +106,7 @@ $('login-form').addEventListener('submit', async (e)=>{
     const ok = await doLogin(u, p);
     if(ok){ enterApp(); } else { $('login-error').textContent = 'Credenziali non valide.'; }
   }catch(err){
-    $('login-error').textContent = 'Errore di connessione. Controlla API_URL.';
+    $('login-error').textContent = 'Errore di connessione.';
   }
 });
 
@@ -145,7 +151,6 @@ function computeStats(){
   const rateRimanenti = rataMensile ? Math.ceil(residuo / rataMensile) : 0;
   const pct = totale ? Math.min(versato / totale * 100, 100) : 0;
 
-  // proiezione fine pagamento: dall'ultima rata pagata + rateRimanenti mesi
   let projFine = null;
   if(rateRimanenti > 0 && pagati.length > 0){
     const lastDate = [...pagati].sort((a,b)=>b.data.localeCompare(a.data))[0].data;
@@ -163,9 +168,7 @@ function render(){
   $('stat-totale').textContent = eur(s.totale);
   $('stat-versato').textContent = eur(s.versato);
   $('stat-residuo').textContent = eur(s.residuo);
-  $('stat-rate').textContent = s.projFine
-    ? `${s.rateRimanenti} (${s.projFine})`
-    : s.rateRimanenti;
+  $('stat-rate').textContent = s.projFine ? `${s.rateRimanenti} (${s.projFine})` : s.rateRimanenti;
   $('pct-value').textContent = Math.round(s.pct) + '%';
   $('rate-caption').textContent = s.numRatePagate + ' rate pagate';
 
@@ -186,17 +189,22 @@ function renderTable(){
   sorted.forEach(m=>{
     const tr = document.createElement('tr');
     const badgeClass = m.stato === 'Pagato' ? 'badge-pagato' : 'badge-saltato';
+    const trnShort = (m.trn||'—').slice(0,9) + (m.trn && m.trn.length > 9 ? '…' : '');
+    const trnCopy = m.trn ? `<span class="trn-copy">copia</span>` : '';
     tr.innerHTML = `
       <td class="mono">${fmtMese(m.data)}</td>
       <td class="mono trn-cell">
-        <span class="trn-short">${(m.trn||'—').slice(0,9)}${m.trn && m.trn.length > 9 ? '…' : ''}</span>
-        ${m.trn ? `<span class="trn-copy" data-trn="${m.trn}">copia</span>` : ''}
+        <span class="trn-short">${trnShort}</span>${trnCopy}
       </td>
       <td class="mono">${m.importo ? eur(m.importo) : '—'}</td>
       <td><span class="badge ${badgeClass}">${m.stato || '—'}</span></td>
       <td class="note-cell">${m.note || ''}</td>
       <td class="row-actions">${SESSION.ruolo === 'write' ? `<button data-edit="${m.rowIndex}">Modifica</button><button data-del="${m.rowIndex}">Elimina</button>` : ''}</td>
     `;
+    // salva il TRN completo come proprietà JS (non attributo HTML, evita problemi di escaping)
+    if(m.trn){
+      tr.querySelector('.trn-copy')._trnValue = m.trn;
+    }
     body.appendChild(tr);
   });
 
@@ -207,65 +215,58 @@ function renderTable(){
     btn.addEventListener('click', ()=> deleteMovimento(Number(btn.dataset.del)));
   });
   body.querySelectorAll('.trn-copy').forEach(span=>{
-    span.addEventListener('click', ()=>{
-      const testo = span.dataset.trn;
-      if(navigator.clipboard && navigator.clipboard.writeText){
-        navigator.clipboard.writeText(testo)
-          .then(()=> toast('TRN copiato!'))
-          .catch(()=> copyFallback(testo));
-      } else {
-        copyFallback(testo);
-      }
-    });
+    span.addEventListener('click', ()=> copyText(span._trnValue));
   });
 }
 
+/* ======================================================================
+   GRAFICO CUMULATIVO
+   ====================================================================== */
 function renderChart(){
   const totale = Number(CFG.TotaleDebito) || 0;
   const rataMensile = Number(CFG.ImportoMensile) || 208;
 
-  // costruisci mappa mese→importo per i mesi pagati
   const byMonth = {};
   MOVIMENTI.filter(m=>m.stato==='Pagato' && m.importo).forEach(m=>{
     const key = m.data.slice(0,7);
     byMonth[key] = (byMonth[key]||0) + Number(m.importo);
   });
   const histLabels = Object.keys(byMonth).sort();
-  if(!histLabels.length){ return; }
+  if(!histLabels.length) return;
 
-  // cumulativo storico
   let running = 0;
   const histCumulative = histLabels.map(l => (running += byMonth[l]));
   const lastHistValue = histCumulative[histCumulative.length - 1];
   const lastHistMonth = histLabels[histLabels.length - 1];
 
-  // mesi di proiezione: da lastHistMonth+1 fino al pareggio
   const residuo = Math.max(totale - lastHistValue, 0);
   const rateRimanenti = rataMensile ? Math.ceil(residuo / rataMensile) : 0;
+
   const projMonths = [];
   for(let i = 1; i <= rateRimanenti; i++){
-    const [y,m] = lastHistMonth.split('-').map(Number);
-    const d = new Date(y, m - 1 + i, 1);
+    const parts = lastHistMonth.split('-').map(Number);
+    const d = new Date(parts[0], parts[1] - 1 + i, 1);
     projMonths.push(d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0'));
   }
 
   const allLabels = [...histLabels, ...projMonths];
 
-  // labels asse X: mostra solo GEN e GIU di ogni anno, il resto stringa vuota
+  // asse X: solo GEN e GIU di ogni anno visibili
   const xLabels = allLabels.map(l => {
-    const m = parseInt(l.split('-')[1], 10);
-    return (m === 1 || m === 6) ? fmtMese(l + '-01') : '';
+    const mo = parseInt(l.split('-')[1], 10);
+    return (mo === 1 || mo === 6) ? fmtMese(l + '-01') : '';
   });
 
-  // dataset storico: valori reali, null nel futuro
-  const dataHist = allLabels.map((l,i) => i < histLabels.length ? histCumulative[i] : null);
+  // dataset 1: storico solido — null dopo l'ultimo mese pagato
+  const dataHist = allLabels.map((l, i) =>
+    i < histLabels.length ? histCumulative[i] : null
+  );
 
-  // dataset proiezione: null per tutto lo storico tranne l'ultimo punto (ponte), poi salita lineare
-  const dataProj = allLabels.map((l,i) => {
+  // dataset 2: proiezione tratteggiata — null fino al punto di raccordo
+  const dataProj = allLabels.map((l, i) => {
     if(i < histLabels.length - 1) return null;
-    if(i === histLabels.length - 1) return lastHistValue; // punto di raccordo
-    const step = i - histLabels.length + 1;
-    return Math.min(lastHistValue + step * rataMensile, totale);
+    if(i === histLabels.length - 1) return lastHistValue;
+    return Math.min(lastHistValue + (i - histLabels.length + 1) * rataMensile, totale);
   });
 
   if(chartRef) chartRef.destroy();
@@ -278,8 +279,8 @@ function renderChart(){
           label: 'Versato',
           data: dataHist,
           borderColor: '#B23A2E',
-          backgroundColor: 'rgba(178,58,46,.10)',
-          fill: 'origin',
+          backgroundColor: 'rgba(178,58,46,.12)',
+          fill: true,
           tension: 0.2,
           pointRadius: 0,
           borderWidth: 2,
@@ -289,30 +290,38 @@ function renderChart(){
           label: 'Proiezione',
           data: dataProj,
           borderColor: '#B8915A',
-          backgroundColor: 'rgba(184,145,90,.06)',
-          fill: 'origin',
+          backgroundColor: 'transparent',
+          fill: false,
           tension: 0,
           pointRadius: 0,
           borderWidth: 2,
-          borderDash: [6,4],
-          spanGaps: false
+          spanGaps: false,
+          // Chart.js 4: borderDash va dentro segment, non a livello di dataset
+          segment: { borderDash: () => [6, 4] }
         },
         {
           label: 'Totale debito',
           data: allLabels.map(() => totale),
-          borderColor: '#1B2A4A',
-          borderDash: [3,3],
-          borderWidth: 1,
+          borderColor: 'rgba(27,42,74,0.35)',
+          fill: false,
           pointRadius: 0,
-          fill: false
+          borderWidth: 1,
+          segment: { borderDash: () => [3, 3] }
         }
       ]
     },
     options: {
       interaction: { mode: 'index', intersect: false },
       plugins: {
-        legend: { display: true, labels: { font: { family: 'Inter', size: 11 }, boxWidth: 14, usePointStyle: true } },
-        tooltip: { callbacks: { label: ctx => ctx.parsed.y != null ? `${ctx.dataset.label}: ${eur(ctx.parsed.y)}` : null } }
+        legend: {
+          display: true,
+          labels: { font: { family: 'Inter', size: 11 }, boxWidth: 14, usePointStyle: true }
+        },
+        tooltip: {
+          callbacks: {
+            label: ctx => ctx.parsed.y != null ? `${ctx.dataset.label}: ${eur(ctx.parsed.y)}` : null
+          }
+        }
       },
       scales: {
         x: {
@@ -331,7 +340,7 @@ function renderChart(){
 }
 
 /* ======================================================================
-   CRUD MOVIMENTI (solo ruolo write)
+   CRUD MOVIMENTI
    ====================================================================== */
 function openMovimentoModal(rowIndex){
   $('movimento-form').reset();
