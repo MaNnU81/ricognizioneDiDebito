@@ -214,10 +214,11 @@ function renderChart(){
   var cumulative = labels.map(function(l){ return running += byMonth[l]; });
   var totale = Number(CFG.TotaleDebito)||0;
 
-  // asse X: mostra solo GEN e GIU, il resto stringa vuota
-  var xLabels = labels.map(function(l){
-    var mo = parseInt(l.split('-')[1], 10);
-    return (mo===1||mo===6) ? fmtMese(l) : '';
+  // asse X: solo 3 etichette — primo mese storico, ultimo pagato, fine proiezione
+  var idxLast = labels.length - 1;
+  var xLabels = labels.map(function(l, i){
+    if(i === 0 || i === idxLast) return fmtMese(l);
+    return '';
   });
 
   if(chartRef) chartRef.destroy();
@@ -233,7 +234,8 @@ function renderChart(){
           backgroundColor: 'rgba(178,58,46,.12)',
           fill: true,
           tension: 0.15,
-          pointRadius: 0,
+          pointRadius: cumulative.map(function(_,i){ return i===idxLast ? 5 : 0; }),
+          pointBackgroundColor: '#B23A2E',
           borderWidth: 2
         },
         {
