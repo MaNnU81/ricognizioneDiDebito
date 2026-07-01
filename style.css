@@ -102,7 +102,15 @@
 
   canvas#monthlyChart{max-height:240px;}
 
-  table{width:100%; min-width:520px; border-collapse:collapse; font-size:14px;}
+  table{width:100%; min-width:420px; border-collapse:collapse; font-size:14px;}
+  .trn-cell{white-space:nowrap;}
+  .trn-short{color:var(--ink); font-size:12px;}
+  .trn-copy{
+    margin-left:6px; font-size:11px; color:var(--stamp); cursor:pointer;
+    text-decoration:underline; font-family:'Inter',sans-serif; font-weight:600;
+    user-select:none;
+  }
+  .trn-copy:hover{opacity:.75;}
   thead th{
     text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--ink-light);
     border-bottom:1px solid var(--line); padding:8px 6px;
