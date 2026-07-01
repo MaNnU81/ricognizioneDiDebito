@@ -12,33 +12,33 @@ let SESSION = null;       // { username, password, ruolo }
 let MOVIMENTI = [];
 let CFG = {};
 let chartRef = null;
-
+ 
 const $ = (id) => document.getElementById(id);
-
+ 
 function toast(msg){
   const t = $('toast');
   t.textContent = msg;
   t.classList.add('show');
   setTimeout(()=>t.classList.remove('show'), 2400);
 }
-
+ 
 function eur(n){
   return '€ ' + (Number(n)||0).toLocaleString('it-IT');
 }
-
+ 
 const MESI_IT = ['GEN','FEB','MAR','APR','MAG','GIU','LUG','AGO','SET','OTT','NOV','DIC'];
-
+ 
 function fmtMese(dateStr){
   const [y,m] = dateStr.split('-');
   return MESI_IT[parseInt(m,10)-1] + ' ' + y;
 }
-
+ 
 function addMonths(dateStr, n){
   const [y,m] = dateStr.split('-').map(Number);
   const d = new Date(y, m - 1 + n, 1);
   return MESI_IT[d.getMonth()] + ' ' + d.getFullYear();
 }
-
+ 
 /* ======================================================================
    LOGIN / SESSIONE
    ====================================================================== */
@@ -51,7 +51,7 @@ function loadSession(){
 }
 function saveSession(){ localStorage.setItem('rd_session', JSON.stringify(SESSION)); }
 function clearSession(){ localStorage.removeItem('rd_session'); SESSION = null; }
-
+ 
 async function apiGet(params){
   const url = CONFIG.API_URL + '?' + new URLSearchParams(params).toString();
   const res = await fetch(url);
@@ -64,7 +64,7 @@ async function apiPost(body){
   });
   return res.json();
 }
-
+ 
 async function doLogin(username, password){
   const r = await apiGet({ action:'login', username, password });
   if(r.ok){
@@ -74,7 +74,7 @@ async function doLogin(username, password){
   }
   return false;
 }
-
+ 
 $('login-form').addEventListener('submit', async (e)=>{
   e.preventDefault();
   $('login-error').textContent = '';
@@ -87,13 +87,13 @@ $('login-form').addEventListener('submit', async (e)=>{
     $('login-error').textContent = 'Errore di connessione. Controlla API_URL.';
   }
 });
-
+ 
 $('logout-btn').addEventListener('click', ()=>{
   clearSession();
   $('app').hidden = true;
   $('login-screen').hidden = false;
 });
-
+ 
 /* ======================================================================
    AVVIO APP
    ====================================================================== */
@@ -104,7 +104,7 @@ async function enterApp(){
   $('add-btn').hidden = SESSION.ruolo !== 'write';
   await refreshData();
 }
-
+ 
 async function refreshData(){
   const r = await apiGet({ action:'getData' });
   if(!r.ok){ toast('Errore caricamento dati'); return; }
@@ -112,11 +112,11 @@ async function refreshData(){
   CFG = r.config;
   render();
 }
-
+ 
 (function init(){
   if(loadSession()){ enterApp(); }
 })();
-
+ 
 /* ======================================================================
    CALCOLI
    ====================================================================== */
@@ -128,17 +128,17 @@ function computeStats(){
   const rataMensile = Number(CFG.ImportoMensile) || 208;
   const rateRimanenti = rataMensile ? Math.ceil(residuo / rataMensile) : 0;
   const pct = totale ? Math.min(versato / totale * 100, 100) : 0;
-
+ 
   // proiezione fine pagamento: dall'ultima rata pagata + rateRimanenti mesi
   let projFine = null;
   if(rateRimanenti > 0 && pagati.length > 0){
     const lastDate = [...pagati].sort((a,b)=>b.data.localeCompare(a.data))[0].data;
     projFine = addMonths(lastDate, rateRimanenti);
   }
-
+ 
   return { versato, totale, residuo, rateRimanenti, pct, numRatePagate: pagati.length, projFine };
 }
-
+ 
 /* ======================================================================
    RENDER
    ====================================================================== */
@@ -152,27 +152,30 @@ function render(){
     : s.rateRimanenti;
   $('pct-value').textContent = Math.round(s.pct) + '%';
   $('rate-caption').textContent = s.numRatePagate + ' rate pagate';
-
+ 
   const circumference = 2 * Math.PI * 52;
   const arc = $('stamp-arc');
   arc.setAttribute('stroke-dasharray', `${circumference * s.pct/100} ${circumference}`);
-
+ 
   renderTable();
   renderChart();
 }
-
+ 
 function renderTable(){
   const body = $('ledger-body');
   body.innerHTML = '';
   const sorted = [...MOVIMENTI].sort((a,b)=> b.data.localeCompare(a.data));
   $('ledger-empty').hidden = sorted.length > 0;
-
+ 
   sorted.forEach(m=>{
     const tr = document.createElement('tr');
     const badgeClass = m.stato === 'Pagato' ? 'badge-pagato' : 'badge-saltato';
     tr.innerHTML = `
       <td class="mono">${fmtMese(m.data)}</td>
-      <td class="mono" style="font-size:12px;">${m.trn || '—'}</td>
+      <td class="mono trn-cell">
+        <span class="trn-short">${(m.trn||'—').slice(0,9)}${m.trn && m.trn.length > 9 ? '…' : ''}</span>
+        ${m.trn ? `<span class="trn-copy" data-trn="${m.trn}">copia</span>` : ''}
+      </td>
       <td class="mono">${m.importo ? eur(m.importo) : '—'}</td>
       <td><span class="badge ${badgeClass}">${m.stato || '—'}</span></td>
       <td class="note-cell">${m.note || ''}</td>
@@ -180,19 +183,24 @@ function renderTable(){
     `;
     body.appendChild(tr);
   });
-
+ 
   body.querySelectorAll('[data-edit]').forEach(btn=>{
     btn.addEventListener('click', ()=> openMovimentoModal(Number(btn.dataset.edit)));
   });
   body.querySelectorAll('[data-del]').forEach(btn=>{
     btn.addEventListener('click', ()=> deleteMovimento(Number(btn.dataset.del)));
   });
+  body.querySelectorAll('.trn-copy').forEach(span=>{
+    span.addEventListener('click', ()=>{
+      navigator.clipboard.writeText(span.dataset.trn).then(()=> toast('TRN copiato!'));
+    });
+  });
 }
-
+ 
 function renderChart(){
   const totale = Number(CFG.TotaleDebito) || 0;
   const rataMensile = Number(CFG.ImportoMensile) || 208;
-
+ 
   // costruisci mappa mese→importo per i mesi pagati
   const byMonth = {};
   MOVIMENTI.filter(m=>m.stato==='Pagato' && m.importo).forEach(m=>{
@@ -201,13 +209,13 @@ function renderChart(){
   });
   const histLabels = Object.keys(byMonth).sort();
   if(!histLabels.length){ return; }
-
+ 
   // cumulativo storico
   let running = 0;
   const histCumulative = histLabels.map(l => (running += byMonth[l]));
   const lastHistValue = histCumulative[histCumulative.length - 1];
   const lastHistMonth = histLabels[histLabels.length - 1];
-
+ 
   // mesi di proiezione: da lastHistMonth+1 fino al pareggio
   const residuo = Math.max(totale - lastHistValue, 0);
   const rateRimanenti = rataMensile ? Math.ceil(residuo / rataMensile) : 0;
@@ -217,15 +225,18 @@ function renderChart(){
     const d = new Date(y, m - 1 + i, 1);
     projMonths.push(d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0'));
   }
-
-  // labels globali: storico + proiezione (subsampling sull'asse X per leggibilità)
+ 
   const allLabels = [...histLabels, ...projMonths];
-  const step = Math.max(1, Math.floor(allLabels.length / 20));
-  const xLabels = allLabels.map((l,i) => i % step === 0 ? fmtMese(l+'-01') : '');
-
+ 
+  // labels asse X: mostra solo GEN e GIU di ogni anno, il resto stringa vuota
+  const xLabels = allLabels.map(l => {
+    const m = parseInt(l.split('-')[1], 10);
+    return (m === 1 || m === 6) ? fmtMese(l + '-01') : '';
+  });
+ 
   // dataset storico: valori reali, null nel futuro
   const dataHist = allLabels.map((l,i) => i < histLabels.length ? histCumulative[i] : null);
-
+ 
   // dataset proiezione: null per tutto lo storico tranne l'ultimo punto (ponte), poi salita lineare
   const dataProj = allLabels.map((l,i) => {
     if(i < histLabels.length - 1) return null;
@@ -233,7 +244,7 @@ function renderChart(){
     const step = i - histLabels.length + 1;
     return Math.min(lastHistValue + step * rataMensile, totale);
   });
-
+ 
   if(chartRef) chartRef.destroy();
   chartRef = new Chart($('monthlyChart'), {
     type: 'line',
@@ -295,7 +306,7 @@ function renderChart(){
     }
   });
 }
-
+ 
 /* ======================================================================
    CRUD MOVIMENTI (solo ruolo write)
    ====================================================================== */
@@ -322,7 +333,7 @@ function openMovimentoModal(rowIndex){
 }
 $('add-btn').addEventListener('click', ()=> openMovimentoModal(null));
 $('movimento-cancel').addEventListener('click', ()=> $('movimento-backdrop').classList.remove('open'));
-
+ 
 $('movimento-form').addEventListener('submit', async (e)=>{
   e.preventDefault();
   const rowIndex = $('mov-rowindex').value;
@@ -344,14 +355,14 @@ $('movimento-form').addEventListener('submit', async (e)=>{
     toast('Errore: ' + (r.error||'sconosciuto'));
   }
 });
-
+ 
 async function deleteMovimento(rowIndex){
   if(!confirm('Eliminare questo versamento?')) return;
   const r = await apiPost({ action:'deleteMovimento', rowIndex });
   if(r.ok){ toast('Eliminato'); await refreshData(); }
   else toast('Errore eliminazione');
 }
-
+ 
 /* ======================================================================
    EXPORT PDF
    ====================================================================== */
@@ -360,7 +371,7 @@ $('pdf-cancel').addEventListener('click', ()=> $('pdf-backdrop').classList.remov
 $('pdf-mode').addEventListener('change', (e)=>{
   $('pdf-range-fields').hidden = e.target.value !== 'range';
 });
-
+ 
 $('pdf-generate').addEventListener('click', ()=>{
   const mode = $('pdf-mode').value;
   let filtered = [...MOVIMENTI];
@@ -371,18 +382,18 @@ $('pdf-generate').addEventListener('click', ()=>{
     label = `Periodo: ${from || '...'} → ${to || '...'}`;
   }
   filtered.sort((a,b)=> a.data.localeCompare(b.data));
-
+ 
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF();
   const s = computeStats();
   const periodVersato = filtered.filter(m=>m.stato==='Pagato' && m.importo).reduce((sum,m)=>sum+Number(m.importo),0);
-
+ 
   doc.setFont('helvetica','bold'); doc.setFontSize(16);
   doc.text('Ricognizione di debito — Report', 14, 18);
   doc.setFont('helvetica','normal'); doc.setFontSize(10);
   doc.text(label, 14, 25);
   doc.text('Generato il ' + new Date().toLocaleDateString('it-IT'), 14, 30);
-
+ 
   let y = 42;
   doc.setFontSize(9);
   doc.setFont('helvetica','bold');
@@ -390,7 +401,7 @@ $('pdf-generate').addEventListener('click', ()=>{
   y += 4;
   doc.setLineWidth(0.2); doc.line(14, y, 196, y); y += 5;
   doc.setFont('helvetica','normal');
-
+ 
   filtered.forEach(m=>{
     if(y > 280){ doc.addPage(); y = 18; }
     doc.text(m.data, 14, y);
@@ -400,7 +411,7 @@ $('pdf-generate').addEventListener('click', ()=>{
     doc.text(String(m.note||'').slice(0,18), 175, y);
     y += 6;
   });
-
+ 
   y += 6;
   if(y > 270){ doc.addPage(); y = 18; }
   doc.setLineWidth(0.3); doc.line(14, y, 196, y); y += 8;
@@ -413,7 +424,7 @@ $('pdf-generate').addEventListener('click', ()=>{
   doc.text(`Residuo da pagare: € ${s.residuo.toLocaleString('it-IT')}`, 14, y); y += 6;
   doc.text(`Rate pagate: ${s.numRatePagate}  ·  Rate rimanenti: ${s.rateRimanenti}`, 14, y); y += 6;
   doc.text(`Percentuale versata: ${Math.round(s.pct)}%`, 14, y);
-
+ 
   doc.save(`ricognizione-debito_${new Date().toISOString().slice(0,10)}.pdf`);
   $('pdf-backdrop').classList.remove('open');
 });
