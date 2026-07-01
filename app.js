@@ -213,12 +213,34 @@ function renderChart(){
   var running = 0;
   var cumulative = labels.map(function(l){ return running += byMonth[l]; });
   var totale = Number(CFG.TotaleDebito)||0;
+  var rata = Number(CFG.ImportoMensile)||208;
 
-  // asse X: solo 3 etichette — primo mese storico, ultimo pagato, fine proiezione
-  var idxLast = labels.length - 1;
-  var xLabels = labels.map(function(l, i){
-    if(i === 0 || i === idxLast) return fmtMese(l);
+  // estendi l'asse X fino alla data di fine proiezione
+  var lastHistValue = cumulative[cumulative.length-1];
+  var lastHistMonth = labels[labels.length-1];
+  var residuo = Math.max(totale - lastHistValue, 0);
+  var rateRim = rata ? Math.ceil(residuo/rata) : 0;
+
+  var allLabels = labels.slice(); // copia storico
+  for(var i=1; i<=rateRim; i++){
+    var p = lastHistMonth.split('-').map(Number);
+    var d = new Date(p[0], p[1]-1+i, 1);
+    allLabels.push(d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'));
+  }
+
+  var idxLastHist = labels.length - 1;    // dove finisce la linea rossa
+  var idxEnd      = allLabels.length - 1; // fine asse X = fine proiezione
+
+  // asse X: etichetta solo su inizio e fine proiezione
+  var xLabels = allLabels.map(function(l, i){
+    if(i === 0)      return fmtMese(l);
+    if(i === idxEnd) return fmtMese(l);
     return '';
+  });
+
+  // dati: valori reali per lo storico, null per i mesi futuri
+  var dataLine = allLabels.map(function(l, i){
+    return i < labels.length ? cumulative[i] : null;
   });
 
   if(chartRef) chartRef.destroy();
@@ -229,18 +251,19 @@ function renderChart(){
       datasets: [
         {
           label: 'Versato',
-          data: cumulative,
+          data: dataLine,
           borderColor: '#B23A2E',
           backgroundColor: 'rgba(178,58,46,.12)',
           fill: true,
           tension: 0.15,
-          pointRadius: cumulative.map(function(_,i){ return i===idxLast ? 5 : 0; }),
+          pointRadius: dataLine.map(function(_,i){ return i===idxLastHist ? 5 : 0; }),
           pointBackgroundColor: '#B23A2E',
-          borderWidth: 2
+          borderWidth: 2,
+          spanGaps: false
         },
         {
           label: 'Totale debito',
-          data: labels.map(function(){ return totale; }),
+          data: allLabels.map(function(){ return totale; }),
           borderColor: 'rgba(27,42,74,0.4)',
           borderWidth: 1.5,
           pointRadius: 0,
