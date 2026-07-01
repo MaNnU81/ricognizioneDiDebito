@@ -2,7 +2,7 @@
    CONFIGURAZIONE — incolla qui l'URL della tua Apps Script Web App
    ====================================================================== */
 const CONFIG = {
-  API_URL: 'PASTE_YOUR_APPS_SCRIPT_WEB_APP_URL_HERE'
+  API_URL: 'https://script.google.com/macros/s/AKfycbymMSfv3ejTrcmluk7u20at8ltGxqjTuQF4f-TYhiqMbJRzOQXClrZ_dDhUz9J5f_HL/exec'
 };
 
 /* ======================================================================
