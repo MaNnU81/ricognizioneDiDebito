@@ -2,7 +2,7 @@
    CONFIGURAZIONE — incolla qui l'URL della tua Apps Script Web App
    ====================================================================== */
 const CONFIG = {
-  API_URL: 'https://script.google.com/macros/s/AKfycbymMSfv3ejTrcmluk7u20at8ltGxqjTuQF4f-TYhiqMbJRzOQXClrZ_dDhUz9J5f_HL/exec'
+  API_URL: 'PASTE_YOUR_APPS_SCRIPT_WEB_APP_URL_HERE'
 };
 
 /* ======================================================================
@@ -24,6 +24,19 @@ function toast(msg){
 
 function eur(n){
   return '€ ' + (Number(n)||0).toLocaleString('it-IT');
+}
+
+const MESI_IT = ['GEN','FEB','MAR','APR','MAG','GIU','LUG','AGO','SET','OTT','NOV','DIC'];
+
+function fmtMese(dateStr){
+  const [y,m] = dateStr.split('-');
+  return MESI_IT[parseInt(m,10)-1] + ' ' + y;
+}
+
+function addMonths(dateStr, n){
+  const [y,m] = dateStr.split('-').map(Number);
+  const d = new Date(y, m - 1 + n, 1);
+  return MESI_IT[d.getMonth()] + ' ' + d.getFullYear();
 }
 
 /* ======================================================================
@@ -115,7 +128,15 @@ function computeStats(){
   const rataMensile = Number(CFG.ImportoMensile) || 208;
   const rateRimanenti = rataMensile ? Math.ceil(residuo / rataMensile) : 0;
   const pct = totale ? Math.min(versato / totale * 100, 100) : 0;
-  return { versato, totale, residuo, rateRimanenti, pct, numRatePagate: pagati.length };
+
+  // proiezione fine pagamento: dall'ultima rata pagata + rateRimanenti mesi
+  let projFine = null;
+  if(rateRimanenti > 0 && pagati.length > 0){
+    const lastDate = [...pagati].sort((a,b)=>b.data.localeCompare(a.data))[0].data;
+    projFine = addMonths(lastDate, rateRimanenti);
+  }
+
+  return { versato, totale, residuo, rateRimanenti, pct, numRatePagate: pagati.length, projFine };
 }
 
 /* ======================================================================
@@ -126,7 +147,9 @@ function render(){
   $('stat-totale').textContent = eur(s.totale);
   $('stat-versato').textContent = eur(s.versato);
   $('stat-residuo').textContent = eur(s.residuo);
-  $('stat-rate').textContent = s.rateRimanenti;
+  $('stat-rate').textContent = s.projFine
+    ? `${s.rateRimanenti} (${s.projFine})`
+    : s.rateRimanenti;
   $('pct-value').textContent = Math.round(s.pct) + '%';
   $('rate-caption').textContent = s.numRatePagate + ' rate pagate';
 
@@ -148,7 +171,7 @@ function renderTable(){
     const tr = document.createElement('tr');
     const badgeClass = m.stato === 'Pagato' ? 'badge-pagato' : 'badge-saltato';
     tr.innerHTML = `
-      <td class="mono">${m.data}</td>
+      <td class="mono">${fmtMese(m.data)}</td>
       <td class="mono" style="font-size:12px;">${m.trn || '—'}</td>
       <td class="mono">${m.importo ? eur(m.importo) : '—'}</td>
       <td><span class="badge ${badgeClass}">${m.stato || '—'}</span></td>
@@ -167,26 +190,107 @@ function renderTable(){
 }
 
 function renderChart(){
+  const totale = Number(CFG.TotaleDebito) || 0;
+  const rataMensile = Number(CFG.ImportoMensile) || 208;
+
+  // costruisci mappa mese→importo per i mesi pagati
   const byMonth = {};
   MOVIMENTI.filter(m=>m.stato==='Pagato' && m.importo).forEach(m=>{
     const key = m.data.slice(0,7);
     byMonth[key] = (byMonth[key]||0) + Number(m.importo);
   });
-  const labels = Object.keys(byMonth).sort();
-  const values = labels.map(l=>byMonth[l]);
+  const histLabels = Object.keys(byMonth).sort();
+  if(!histLabels.length){ return; }
+
+  // cumulativo storico
+  let running = 0;
+  const histCumulative = histLabels.map(l => (running += byMonth[l]));
+  const lastHistValue = histCumulative[histCumulative.length - 1];
+  const lastHistMonth = histLabels[histLabels.length - 1];
+
+  // mesi di proiezione: da lastHistMonth+1 fino al pareggio
+  const residuo = Math.max(totale - lastHistValue, 0);
+  const rateRimanenti = rataMensile ? Math.ceil(residuo / rataMensile) : 0;
+  const projMonths = [];
+  for(let i = 1; i <= rateRimanenti; i++){
+    const [y,m] = lastHistMonth.split('-').map(Number);
+    const d = new Date(y, m - 1 + i, 1);
+    projMonths.push(d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0'));
+  }
+
+  // labels globali: storico + proiezione (subsampling sull'asse X per leggibilità)
+  const allLabels = [...histLabels, ...projMonths];
+  const step = Math.max(1, Math.floor(allLabels.length / 20));
+  const xLabels = allLabels.map((l,i) => i % step === 0 ? fmtMese(l+'-01') : '');
+
+  // dataset storico: valori reali, null nel futuro
+  const dataHist = allLabels.map((l,i) => i < histLabels.length ? histCumulative[i] : null);
+
+  // dataset proiezione: null per tutto lo storico tranne l'ultimo punto (ponte), poi salita lineare
+  const dataProj = allLabels.map((l,i) => {
+    if(i < histLabels.length - 1) return null;
+    if(i === histLabels.length - 1) return lastHistValue; // punto di raccordo
+    const step = i - histLabels.length + 1;
+    return Math.min(lastHistValue + step * rataMensile, totale);
+  });
 
   if(chartRef) chartRef.destroy();
   chartRef = new Chart($('monthlyChart'), {
-    type: 'bar',
+    type: 'line',
     data: {
-      labels,
-      datasets: [{ label:'Versato', data: values, backgroundColor: '#B23A2E', borderRadius: 2, maxBarThickness: 22 }]
+      labels: xLabels,
+      datasets: [
+        {
+          label: 'Versato',
+          data: dataHist,
+          borderColor: '#B23A2E',
+          backgroundColor: 'rgba(178,58,46,.10)',
+          fill: true,
+          tension: 0.2,
+          pointRadius: 0,
+          borderWidth: 2,
+          spanGaps: false
+        },
+        {
+          label: 'Proiezione',
+          data: dataProj,
+          borderColor: '#B8915A',
+          backgroundColor: 'rgba(184,145,90,.07)',
+          fill: true,
+          tension: 0,
+          pointRadius: 0,
+          borderWidth: 2,
+          borderDash: [5,4],
+          spanGaps: false
+        },
+        {
+          label: 'Totale debito',
+          data: allLabels.map(() => totale),
+          borderColor: '#1B2A4A',
+          borderDash: [3,3],
+          borderWidth: 1,
+          pointRadius: 0,
+          fill: false
+        }
+      ]
     },
     options: {
-      plugins: { legend: { display:false } },
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: true, labels: { font: { family: 'Inter', size: 11 }, boxWidth: 14, usePointStyle: true } },
+        tooltip: { callbacks: { label: ctx => ctx.parsed.y != null ? `${ctx.dataset.label}: ${eur(ctx.parsed.y)}` : null } }
+      },
       scales: {
-        x: { grid: { display:false }, ticks: { font: { family: 'IBM Plex Mono', size: 10 } } },
-        y: { grid: { color:'#D8CFC0' }, ticks: { callback: v => '€'+v } }
+        x: {
+          grid: { display: false },
+          ticks: { font: { family: 'IBM Plex Mono', size: 9 }, maxRotation: 0, autoSkip: false }
+        },
+        y: {
+          grid: { color: '#D8CFC0' },
+          min: 0,
+          max: totale,
+          ticks: { callback: v => '€' + v.toLocaleString('it-IT') }
+        }
       }
     }
   });
